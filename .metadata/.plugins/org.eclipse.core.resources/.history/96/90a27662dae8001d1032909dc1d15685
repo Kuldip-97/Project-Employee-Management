@@ -1,0 +1,2 @@
+server.port=9870
+spring.application.name=API-GATEWAY

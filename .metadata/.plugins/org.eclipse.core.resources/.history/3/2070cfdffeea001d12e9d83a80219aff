@@ -1,0 +1,188 @@
+package com.example.service;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+
+import org.modelmapper.ModelMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import com.example.dto.EmployeeDto;
+import com.example.dto.ProjectDto;
+import com.example.dto.SkillsDto;
+import com.example.entity.Project;
+import com.example.exceptions.ResourceNotFoundException;
+import com.example.repository.ProjectRepository;
+
+@Service
+public class ProjectService {
+	@Autowired
+	ProjectRepository projectRepo;
+	
+	@Autowired
+	RestTemplate rest;
+	
+	@Autowired
+	ModelMapper mapper;
+	//EMPLOYEE-SERVICE		localhost:8082
+	
+	
+	//	GET -> all
+	public List<ProjectDto> getAllProjectsFromDB() {
+		List<Project> allProjects = projectRepo.findAll();
+		List<ProjectDto> allProjectsDto = new ArrayList<>();
+		if(allProjects.size() <= 0) {
+			throw new ResourceNotFoundException("No Projects present");
+		}
+		
+		for (Project eachProject : allProjects) {
+			List<String> allEmpID = eachProject.getEmployeeId();
+			List<EmployeeDto> empList = new ArrayList<>();
+			for (String eachEmpID : allEmpID) {
+				String eachEmpIDString = "http://EMPLOYEE-SERVICE/api/employees/"+eachEmpID;
+				EmployeeDto emp = rest.getForObject(eachEmpIDString, EmployeeDto.class);
+				empList.add(emp);
+			}
+			ProjectDto eachProjectDto = mapper.map(eachProject, ProjectDto.class);
+			eachProjectDto.setEmployee(empList);
+			allProjectsDto.add(eachProjectDto);
+		}
+		return allProjectsDto;
+	}
+	
+	
+	//	GET -> by ID
+	public ProjectDto getProjectByIDfromDB(String projectId) {
+		Project specificProject = projectRepo.findById(projectId).orElseThrow(() -> new ResourceNotFoundException("Project Not Found"));
+		List<String> allEmployeeIDs = specificProject.getEmployeeId();
+		List<EmployeeDto> empList = new ArrayList<>();
+				
+		for (String eachEmpIDs : allEmployeeIDs) {
+			String empString = "http://EMPLOYEE-SERVICE/api/employees/"+eachEmpIDs;
+			EmployeeDto empFetched = rest.getForObject(empString, EmployeeDto.class);
+			empList.add(empFetched);
+		}
+		
+		ProjectDto specificProjectDto = mapper.map(specificProject, ProjectDto.class);
+		specificProjectDto.setEmployee(empList);
+		return specificProjectDto;
+	}
+	
+	
+	//	GET -> by CLIENT
+	public List<ProjectDto> getAllProjectsByClientName(String projectClientName) {
+		List<Project> allProjectsByClientName = projectRepo.findByProjectClientName(projectClientName);
+		if(allProjectsByClientName.size() <= 0) {
+			throw new ResourceNotFoundException("No Project present");
+		}
+		List<ProjectDto> allProjectDtosByClientName = allProjectsByClientName.stream().map(eachProject -> mapper.map(eachProject, ProjectDto.class)).toList();
+		return allProjectDtosByClientName;
+	}
+	
+	
+	//	GET -> by EMPLOYEE ID
+	public List<ProjectDto> getAllProjectsByEmployeeId(String employeeId) {
+		List<Project> allProjectsOfEmployee = projectRepo.findByEmployeeId(employeeId);
+		if(allProjectsOfEmployee.size() <= 0) {
+			throw new ResourceNotFoundException("No projects assigned to user");
+		}
+		List<ProjectDto> allProjectsDTOsOfEmployee = allProjectsOfEmployee.stream().map(eachProject -> mapper.map(eachProject, ProjectDto.class)).toList();
+		return allProjectsDTOsOfEmployee;
+	}
+	
+	
+	// GET -> by Req SKILL
+	public List<EmployeeDto> getEmpByReqSkill(String projectId){
+		List<EmployeeDto> reqEmp = new ArrayList<>();
+		Project projectById = projectRepo.findById(projectId).orElseThrow(() -> new ResourceNotFoundException("Project Not found"));
+		List<String> projectSkills = projectById.getProjectTechStacks();
+		
+		String allEmployeesString = "http://EMPLOYEE-SERVICE/api/employees";
+		EmployeeDto[] allEmployeeDtoObjects = rest.getForObject(allEmployeesString, EmployeeDto[].class);
+		List<EmployeeDto> allEmployeeDTOs = Arrays.stream(allEmployeeDtoObjects).toList();
+		
+		for (String eachProjectSkill : projectSkills) {
+			for (EmployeeDto empDto : allEmployeeDTOs) {
+				List<SkillsDto> allEmpSkillsDto = empDto.getEmployeeSkills();
+				for (SkillsDto empSkillDto : allEmpSkillsDto) {
+					if(empSkillDto.getSkillName().equals(eachProjectSkill)) {
+						if(!(reqEmp.contains(empDto))) {
+							reqEmp.add(empDto);
+						}
+					}
+				}
+			}
+		}
+		return reqEmp;
+	}
+	
+	
+	//	POST
+	public ProjectDto insertProjectInDB(ProjectDto projectDto) {
+		String randomID = UUID.randomUUID().toString();
+		projectDto.setProjectId(randomID);
+		Project project = mapper.map(projectDto, Project.class);
+		projectRepo.save(project);
+		ProjectDto projectDto2 = mapper.map(project, ProjectDto.class);
+		return projectDto2;
+	}
+	
+	
+	// UPDATE
+	public ProjectDto updateProjectInDB(ProjectDto projectDto, String projectId) {
+		//find and fetch the project by Id
+		Project projectByID = projectRepo.findById(projectId).orElseThrow(() -> new ResourceNotFoundException("Project Not Found"));
+		
+		//updating each field
+		projectByID.setProjectName(projectDto.getProjectName());
+		projectByID.setProjectDescription(projectDto.getProjectDescription());
+		projectByID.setProjectStatus(projectDto.isProjectStatus());
+		projectByID.setProjectStartDate(projectDto.getProjectStartDate());
+		projectByID.setProjectExpiryDate(projectDto.getProjectExpiryDate());
+		projectByID.setProjectTechStacks(projectDto.getProjectTechStacks());
+		
+		//save the projectByID
+		Project updatedProject = projectRepo.save(projectByID);
+		ProjectDto updatedProjectDto = mapper.map(updatedProject, ProjectDto.class);
+		return updatedProjectDto;
+	}
+	
+	
+	// ASSIGN -> EMPLOYEE ID to PROJECT
+	public ProjectDto assignEmployeeToProject(ProjectDto projectDto, String projectId) {
+		List<EmployeeDto> employeeMatched = new ArrayList<>();
+		Project projectByID = projectRepo.findById(projectId).orElseThrow(() -> new ResourceNotFoundException("Project Not Found"));
+		
+		String allEmployeesString = "http://EMPLOYEE-SERVICE/api/employees";
+		EmployeeDto[] allEmployeeDtoObjects = rest.getForObject(allEmployeesString, EmployeeDto[].class);
+		List<EmployeeDto> allEmployeeDTOs = Arrays.stream(allEmployeeDtoObjects).toList();
+		List<String> employeeIDs = projectDto.getEmployeeId();
+		
+		for (EmployeeDto employeeDto : allEmployeeDTOs) {
+			for (String singleEmpId : employeeIDs) {
+				if(employeeDto.getEmployeeId().equals(singleEmpId)) {
+					employeeMatched.add(employeeDto);
+				}
+			}
+		}
+		
+		projectByID.setEmployeeId(projectDto.getEmployeeId());
+		projectByID.setEmployee(employeeMatched);
+		Project employeeAssignedToProject = projectRepo.save(projectByID);
+		ProjectDto updatedProjectDto = mapper.map(employeeAssignedToProject, ProjectDto.class);
+		return updatedProjectDto;
+	}
+	
+	
+	// DELETE
+	public String deleteProjectFromDB(String projectId) {
+		Project projectByID = projectRepo.findById(projectId).orElseThrow(() -> new ResourceNotFoundException("Project Not Found"));
+		projectRepo.delete(projectByID);
+		//ProjectDto deletedProjectDto = mapper.map(projectByID, ProjectDto.class);
+		String message = "The Project with Id:" + projectId + " is deleted";
+		return message;
+	}
+}

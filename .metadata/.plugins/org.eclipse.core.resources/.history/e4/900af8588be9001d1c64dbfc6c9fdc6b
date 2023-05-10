@@ -1,0 +1,74 @@
+package com.example.controller;
+
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.example.dto.EmployeeDto;
+import com.example.service.EmployeeService;
+
+@RestController
+@RequestMapping("/api/employees")
+public class EmployeeController {
+	@Autowired
+	EmployeeService employeeService;
+	
+	
+	@GetMapping
+	public ResponseEntity<List<EmployeeDto>> getAllEmployee(){
+		List<EmployeeDto> allEmployees = employeeService.getAllEmployeeFromDB();
+		return new ResponseEntity<List<EmployeeDto>>(allEmployees, HttpStatus.OK);
+	}
+	
+	@GetMapping("/{employeeId}")
+	public ResponseEntity<EmployeeDto> getSpecificEmployee(@PathVariable String employeeId){
+		EmployeeDto employeeDto = employeeService.getEmployeeByIDfromDB(employeeId);
+		return new ResponseEntity<EmployeeDto>(employeeDto, HttpStatus.OK);
+	}
+	
+	@GetMapping("/name/{employeeName}")
+	public ResponseEntity<List<EmployeeDto>> getEmployeeByName(@PathVariable String employeeName){
+		List<EmployeeDto> allEmployeesByNames = employeeService.getAllEmployeeByNameFromDB(employeeName);
+		return new ResponseEntity<List<EmployeeDto>>(allEmployeesByNames, HttpStatus.OK);
+	}
+	
+	@GetMapping("/skill/{employeeSkill}")
+	public ResponseEntity<List<EmployeeDto>> getEmployeeBySkill(@PathVariable String employeeSkill){
+		List<EmployeeDto> allEmployeesBySkills = employeeService.getAllEmployeeBySkill(employeeSkill);
+		return new ResponseEntity<List<EmployeeDto>>(allEmployeesBySkills, HttpStatus.OK);
+	}
+	
+//	@GetMapping("/project/{projectId}")
+//	public ResponseEntity<List<EmployeeDto>> getEmployeeByProjectID(@PathVariable String projectId){
+//		List<EmployeeDto> allEmployeeByProjectID = employeeService.getAllEmployeeByProjectID(projectId);
+//		return new ResponseEntity<List<EmployeeDto>>(allEmployeeByProjectID, HttpStatus.OK);
+//	}
+	
+	@PostMapping
+	public ResponseEntity<EmployeeDto> addEmployee(@RequestBody EmployeeDto employeeDto){
+		EmployeeDto employeeAdded = employeeService.addEmployeeInDB(employeeDto);
+		return new ResponseEntity<EmployeeDto>(employeeAdded, HttpStatus.CREATED);
+	}
+	
+	@PutMapping("/{employeeId}")
+	public ResponseEntity<EmployeeDto> updateEmployee(@RequestBody EmployeeDto employeeDto, @PathVariable String employeeId){
+		EmployeeDto employeeUpdated = employeeService.updateEmployeeInDB(employeeDto, employeeId);
+		return new ResponseEntity<EmployeeDto>(employeeUpdated, HttpStatus.OK);
+	}
+	
+	@DeleteMapping("/{employeeId}")
+	public ResponseEntity<String> deleteEmployee(@PathVariable String employeeId){
+		String employeeDeleted = employeeService.deleteEmployeeFromDB(employeeId);
+		return new ResponseEntity<String>(employeeDeleted, HttpStatus.OK);
+	}
+}

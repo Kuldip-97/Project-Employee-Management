@@ -1,0 +1,15 @@
+#Port number
+server.port=9870
+
+#Application name
+spring.application.name=API-GATEWAY
+
+#Eureka
+eureka.instance.prefer-ip-address=true
+eureka.client.fetch-registry=true
+eureka.client.register-with-eureka=true
+eureka.client.service-url.defaultZone=http://localhost:9000/eureka
+
+#All Microservices
+spring.cloud.gateway.routes[0].id=
+spring.cloud.gateway.routes[0].uri=

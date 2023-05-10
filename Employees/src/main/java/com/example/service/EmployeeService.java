@@ -1,0 +1,221 @@
+package com.example.service;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.modelmapper.ModelMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import com.example.dto.EmployeeDto;
+import com.example.dto.ProjectDto;
+import com.example.dto.SkillsDto;
+import com.example.entity.Employee;
+import com.example.entity.Skills;
+import com.example.exceptions.ResourceNotFoundException;
+import com.example.repository.EmployeeRepository;
+
+@Service
+public class EmployeeService {
+	@Autowired
+	EmployeeRepository employeeRepo;
+	
+	@Autowired
+	RestTemplate rest;
+	
+	@Autowired
+	ModelMapper mapper;
+	//PROJECT-SERVICE		localhost:8081
+	
+	
+	// GET -> all
+	public List<EmployeeDto> getAllEmployeeFromDB() {
+		List<Employee> allEmployees = employeeRepo.findAll();
+		
+		if (allEmployees.size() <= 0) {
+			throw new ResourceNotFoundException("No Employee found!!!");
+		}
+		
+//		for (Employee eachEmp : allEmployees) {
+//			String employeeId = eachEmp.getEmployeeId();
+//			String getProjOfEmpString = "http://localhost:8081/api/projects/employee/"+employeeId;
+//			ProjectDto[] projectDtoArray = rest.getForObject(getProjOfEmpString, ProjectDto[].class);
+//			List<ProjectDto> projectDtoArrayList = Arrays.stream(projectDtoArray).toList();
+//			eachEmp.setProject(projectDtoArrayList);
+//		}
+		
+		List<EmployeeDto> allEmployeesDto = allEmployees.stream().map(eachEmployee -> mapper.map(eachEmployee, EmployeeDto.class)).toList();
+		return allEmployeesDto;
+	}
+	
+	
+	// GET -> by ID
+	public EmployeeDto getEmployeeByIDfromDB(String employeeId) {
+		Employee employeeFetched = employeeRepo.findById(employeeId).orElseThrow(() -> new ResourceNotFoundException("No such Employee found!!!"));
+		//Microservices - getting project for employee
+		String getProjectOfEmpString = "http://PROJECT-SERVICE/api/projects/employee/"+employeeId;
+		ProjectDto[] projOfEmpArray = rest.getForObject(getProjectOfEmpString, ProjectDto[].class);
+		List<ProjectDto> projOfEmpDTOs = Arrays.stream(projOfEmpArray).toList();
+		employeeFetched.setProject(projOfEmpDTOs);
+		EmployeeDto employeeDto = mapper.map(employeeFetched, EmployeeDto.class);
+		return employeeDto;
+	}
+	
+	
+	// GET -> by NAME
+	public List<EmployeeDto> getAllEmployeeByNameFromDB(String employeeName) {
+		List<Employee> allEmployeeByName = employeeRepo.findByEmployeeName(employeeName);
+		if (allEmployeeByName.size() <= 0) {
+			throw new ResourceNotFoundException("No Employee found!!!");
+		}
+		for (Employee eachEmp : allEmployeeByName) {
+			String employeeId = eachEmp.getEmployeeId();
+			String getProjectOfEmpString = "http://PROJECT-SERVICE/api/projects/employee/"+employeeId;
+			ProjectDto[] projectDTOsArray = rest.getForObject(getProjectOfEmpString, ProjectDto[].class);
+			List<ProjectDto> projDTOsArrayList = Arrays.stream(projectDTOsArray).toList();
+			eachEmp.setProject(projDTOsArrayList);
+		}
+		List<EmployeeDto> allEmployeeDtoByName = allEmployeeByName.stream().map(eachEmployee -> mapper.map(eachEmployee, EmployeeDto.class)).collect(Collectors.toList());
+		return allEmployeeDtoByName;
+	}
+	
+	
+	// GET -> by SKILL
+	public List<EmployeeDto> getAllEmployeeBySkill(String employeeSkill) {
+		List<Employee> matchedEmployees = new ArrayList<>();
+		List<Employee> allEmployees = employeeRepo.findAll();
+		if(allEmployees.size() <= 0) {
+			throw new ResourceNotFoundException("No Employee found!!!");
+		}
+		
+		for (Employee eachEmp : allEmployees) {
+			List<Skills> empSkill = eachEmp.getEmployeeSkills();
+			for (Skills eachEmpSkill : empSkill) {
+				if(eachEmpSkill.getSkillName().equals(employeeSkill)) {
+					matchedEmployees.add(eachEmp);
+				}
+			}
+		}
+		
+		if(matchedEmployees.size() <= 0) {
+			throw new ResourceNotFoundException("No Employee with Skills of "+employeeSkill+" is present");
+		}
+		System.out.println("Emps are: "+ matchedEmployees);
+		List<EmployeeDto> employeeMatchedDTO = matchedEmployees.stream().map(eachMatchedEmp -> mapper.map(eachMatchedEmp, EmployeeDto.class)).collect(Collectors.toList());
+		return employeeMatchedDTO;
+	}
+	
+	
+	// POST
+	public EmployeeDto addEmployeeInDB(EmployeeDto employeeDto) {
+		// --------------------------------------------------------SETTTING ID OF EMPLOYEE-------------------------------------------------------------------------------------
+		String randomEmpID = UUID.randomUUID().toString();
+		employeeDto.setEmployeeId(randomEmpID);
+
+		// --------------------------------------------------------FINDING SKILLSDTO-------------------------------------------------------------------------------------------
+		List<SkillsDto> employeeSkillsDto = employeeDto.getEmployeeSkills();
+
+		// --------------------------------------------------------SETTING ID OF SKILL---------------------------------------------------------------------------------------
+		for (SkillsDto skillsDto : employeeSkillsDto) {
+			String randomSkillID = UUID.randomUUID().toString();
+			skillsDto.setSkillId(randomSkillID);
+		}
+		
+		// --------------------------------------------------------CONVERTING SKILLSDTO TO SKILLS------------------------------------------------------------------------------
+		List<Skills> employeeSkills = employeeSkillsDto.stream().map(eachSkill -> mapper.map(eachSkill, Skills.class)).toList();
+
+		// --------------------------------------------------------CONVERTING DTO TO EMPLOYEE AND SAVING IT--------------------------------------------------------------------
+		Employee employeeSaved = mapper.map(employeeDto, Employee.class);
+		employeeRepo.save(employeeSaved);
+
+		// --------------------------------------------------------CONVERTING EMPLOYEE TO DTO AND RETURNING IT-----------------------------------------------------------------
+		EmployeeDto employeeDto2 = mapper.map(employeeSaved, EmployeeDto.class);
+		return employeeDto2;
+	}
+	
+	
+	// UPDATE
+	public EmployeeDto updateEmployeeInDB(EmployeeDto employeeDto, String employeeId) {
+		// --------------------------------------------------------GETTING SKILLSDTO LIST AND CHANGING IT TO SKILLS LIST--------------------------------------------------------
+		List<SkillsDto> employeeSkillsDto = employeeDto.getEmployeeSkills();
+		List<Skills> employeeSkills = employeeSkillsDto.stream().map(
+				(eachSkill) -> 
+				{	// ---------IF IDS NOT GIVEN THEN GENERATE RANDOM ID---------
+					if(eachSkill.getSkillId()==null) {
+						String randomSkillID = UUID.randomUUID().toString();
+						eachSkill.setSkillId(randomSkillID);
+					}
+					return mapper.map(eachSkill, Skills.class); }).collect(Collectors.toList());
+
+		// --------------------------------------------------------SEARCHING EMPLOYEE BY ID-------------------------------------------------------------------------------------
+		Employee employeeFetched = employeeRepo.findById(employeeId).orElseThrow(() -> new ResourceNotFoundException("No such Employee found!!!"));
+		List<Skills> skillsFetched = employeeFetched.getEmployeeSkills();
+		
+		// --------------------------------------------------------MAKING VARIABLES TO BE USED OUTSIDE OF FOREACH---------------------------------------------------------------
+		List<Skills> matchingSkills = new ArrayList<>();
+		List<Skills> unmatchedSkills = new ArrayList<>();
+
+		// --------------------------------------------------------UPDATING FEILDS OTHER THAN SKILLS----------------------------------------------------------------------------
+		employeeFetched.setEmployeeName(employeeDto.getEmployeeName());
+		employeeFetched.setEmployeeEmail(employeeDto.getEmployeeEmail());
+
+		// --------------------------------------------------------UPDATING FIELD OF SKILLS-------------------------------------------------------------------------------------
+		for (Skills eachSkillofEmployee : employeeSkills) {
+			for (Skills eachSkillFetched : skillsFetched) {
+				if (eachSkillofEmployee.getSkillId().equals(eachSkillFetched.getSkillId())) {
+					eachSkillFetched.setSkillExperience(eachSkillofEmployee.getSkillExperience());
+					matchingSkills.add(eachSkillFetched);
+				}
+			}
+		}
+
+		List<String> matchingSkillID = matchingSkills.stream().map((eachMatSkill) -> { return eachMatSkill.getSkillId(); }).collect(Collectors.toList());
+		List<String> employeeSkillID = employeeSkills.stream().map((eachEmpSkill) -> { return eachEmpSkill.getSkillId(); }).collect(Collectors.toList());
+		List<String> unMatchedSkillsID = employeeSkillID;
+		unMatchedSkillsID.removeAll(matchingSkillID);
+
+		// --------------------------------------------------------UNMATCHED SKILLS WILL BE ADDED AS NEW--------------------------------------------------------------------------
+		for (Skills eachEmpSkill : employeeSkills) {
+			if (unMatchedSkillsID.contains(eachEmpSkill.getSkillId())) {
+				unmatchedSkills.add(eachEmpSkill);
+			}
+		}
+
+		employeeFetched.getEmployeeSkills().addAll(unmatchedSkills);
+		employeeRepo.save(employeeFetched);
+
+		// --------------------------------------------------------EMPLOYEE TO EMPLOYEEDTO AND RETURNING IT---------------------------------------------------------------------
+		EmployeeDto employeeDto2 = mapper.map(employeeFetched, EmployeeDto.class);
+		return employeeDto2;
+	}
+	
+	
+	// DELETE
+	public String deleteEmployeeFromDB(String employeeId) {
+		Employee employeeDelete = employeeRepo.findById(employeeId).orElseThrow(() -> new ResourceNotFoundException("No such Employee found!!!"));
+		employeeRepo.delete(employeeDelete);
+		//EmployeeDto employeeDto = mapper.map(employeeDelete, EmployeeDto.class);
+		String message = "The Employee with Id:" + employeeId + " is deleted";
+		return message;
+	}
+	
+	
+	// NO EMPLOYEE
+	public EmployeeDto noEmployee() {
+		Employee emp = Employee.builder()
+				.employeeId("-")
+				.employeeName("-")
+				.employeeEmail("-")
+				.employeeSkills(null)
+				.projectId(null)
+				.project(null)
+				.build();
+		EmployeeDto empDto = mapper.map(emp, EmployeeDto.class);
+		return empDto;
+	}
+}
